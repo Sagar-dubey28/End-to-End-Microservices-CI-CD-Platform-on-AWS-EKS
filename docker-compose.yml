@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # 1. React UI Frontend
+  ecommerce-ui:
+    build:
+      context: ./ecommerce-ui
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - user-service
+      - cart-service
+      - order-service
+      - payment-service
+
+  # 2. Java User Service
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+
+  # 3. Node.js Cart Service
+  cart-service:
+    build:
+      context: ./cart-service
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+
+  # 4. Python Order Service
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+
+  # 5. Go Payment Service
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8085"
+
+networks:
+  default:
+    name: ecommerce-network
