@@ -145,30 +145,33 @@ export default function App() {
   const handlePlaceOrder = async (e) => {
     e.preventDefault();
     if (cart.length === 0) return;
+    if (!user?.id) {
+      console.error('Checkout Error: User must be logged in to place an order.');
+      return;
+    }
 
+    const shippingAddressString = `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state} - ${shippingAddress.zip}`;
     const orderPayload = {
-      user_id: user?.id,
+      user_id: String(user.id),
       items: cart,
-      total_amount: cartSubtotal,
-      shipping_address: `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state} - ${shippingAddress.zip}`,
+      total_amount: Number(cartSubtotal),
+      shipping_address: shippingAddressString,
     };
 
     try {
-      const backendOrder = user ? await placeOrder(orderPayload) : null;
+      const backendOrder = await placeOrder(orderPayload);
       const orderInfo = backendOrder?.order || backendOrder;
       const orderId = orderInfo?.id || orderInfo?.orderId || 'ORD-' + Math.floor(100000 + Math.random() * 900000);
 
-      if (user) {
-        await processPayment(orderId, cartSubtotal);
-        await syncCartToBackend(user.id, []);
-      }
+      await processPayment(orderId, cartSubtotal);
+      await syncCartToBackend(String(user.id), []);
 
       const newOrder = {
         id: orderId,
         items: cart,
         total: cartSubtotal,
-        address: `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state} - ${shippingAddress.zip}`,
-        status: user ? 'Payment Completed' : 'Processing',
+        address: shippingAddressString,
+        status: 'Payment Completed',
         date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
       };
 
