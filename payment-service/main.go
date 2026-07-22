@@ -9,7 +9,7 @@ import (
 )
 
 type PaymentRequest struct {
-	OrderID float64 `json:"order_id"`
+	OrderID string  `json:"order_id"`
 	Amount  float64 `json:"amount"`
 }
 
@@ -21,10 +21,25 @@ type PaymentResponse struct {
 
 func processPayment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Content-Type", "application/json")
 
 	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var paymentReq PaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&paymentReq); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid payment request payload"})
+		return
+	}
+
+	if paymentReq.OrderID == "" || paymentReq.Amount <= 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid order_id or amount"})
 		return
 	}
 
@@ -32,7 +47,7 @@ func processPayment(w http.ResponseWriter, r *http.Request) {
 	response := PaymentResponse{
 		TransactionID: txnID,
 		Status:        "SUCCESS",
-		Message:       "Payment processed successfully",
+		Message:       fmt.Sprintf("Payment of %.2f for order %s processed successfully", paymentReq.Amount, paymentReq.OrderID),
 	}
 
 	json.NewEncoder(w).Encode(response)

@@ -5,8 +5,12 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
-// User Service API URL
-const USER_SERVICE_URL = 'http://13.207.197.125:8081';
+const getServiceUrl = (envUrl, port) => envUrl || `http://${window.location.hostname}:${port}`;
+
+const USER_SERVICE_URL = getServiceUrl(import.meta.env.VITE_USER_SERVICE_URL, 8081);
+const CART_SERVICE_URL = getServiceUrl(import.meta.env.VITE_CART_SERVICE_URL, 8083);
+const ORDER_SERVICE_URL = getServiceUrl(import.meta.env.VITE_ORDER_SERVICE_URL, 8084);
+const PAYMENT_SERVICE_URL = getServiceUrl(import.meta.env.VITE_PAYMENT_SERVICE_URL, 8085);
 
 const INITIAL_PRODUCTS = [
   { id: 1, name: 'Premium Leather Jacket', price: 4999, category: 'Fashion', rating: 4.8, image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=500' },
@@ -46,9 +50,7 @@ export default function App() {
     setAuthStatus({ loading: true, error: '', success: '' });
 
     try {
-      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
-      
-      // Fixed payload field mapping (fullName instead of name for Spring Boot DTO)
+      const endpoint = authMode === 'login' ? '/api/users/login' : '/api/users/register';
       const payload = authMode === 'login' 
         ? { email: authData.email, password: authData.password }
         : { fullName: authData.name, email: authData.email, password: authData.password };
@@ -61,12 +63,11 @@ export default function App() {
         success: authMode === 'login' ? 'Login Successful!' : 'Registration Successful!' 
       });
       
-      // Response handling fixed
-      const loggedUser = response.data.user || response.data;
+      const responseBody = response.data || {};
       setUser({
-        name: loggedUser.fullName || loggedUser.name || authData.name || 'User',
-        email: loggedUser.email || authData.email,
-        id: loggedUser.id
+        name: responseBody.fullName || authData.name || 'User',
+        email: responseBody.email || authData.email,
+        id: responseBody.userId || responseBody.id,
       });
 
       setTimeout(() => {
@@ -76,13 +77,44 @@ export default function App() {
 
     } catch (err) {
       console.error('Auth Error:', err);
-      // Removed dummy local fallback so real DB errors are displayed
-      const errorMsg = err.response?.data?.message || err.response?.data || 'Failed to authenticate. Check Backend/DB connection.';
+      const errorMsg = err.response?.data?.message || err.response?.data || err.message || 'Failed to authenticate. Check Backend/DB connection.';
       setAuthStatus({ 
         loading: false, 
         error: typeof errorMsg === 'string' ? errorMsg : 'Authentication failed', 
         success: '' 
       });
+    }
+  };
+
+  const syncCartToBackend = async (userId, cartItems) => {
+    if (!userId) return;
+    try {
+      await axios.post(`${CART_SERVICE_URL}/api/cart/${userId}`, { items: cartItems });
+    } catch (err) {
+      console.error('Cart Sync Error:', err.response?.data || err.message || err);
+    }
+  };
+
+  const placeOrder = async (orderPayload) => {
+    try {
+      const response = await axios.post(`${ORDER_SERVICE_URL}/api/orders`, orderPayload);
+      return response.data;
+    } catch (err) {
+      console.error('Order Creation Error:', err.response?.data || err.message || err);
+      throw err;
+    }
+  };
+
+  const processPayment = async (orderId, amount) => {
+    try {
+      const response = await axios.post(`${PAYMENT_SERVICE_URL}/api/payment/process`, {
+        order_id: orderId,
+        amount,
+      });
+      return response.data;
+    } catch (err) {
+      console.error('Payment Error:', err.response?.data || err.message || err);
+      throw err;
     }
   };
 
@@ -110,22 +142,42 @@ export default function App() {
   const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   // Place Order Simulation
-  const handlePlaceOrder = (e) => {
+  const handlePlaceOrder = async (e) => {
     e.preventDefault();
     if (cart.length === 0) return;
 
-    const newOrder = {
-      id: 'ORD-' + Math.floor(100000 + Math.random() * 900000),
+    const orderPayload = {
+      user_id: user?.id,
       items: cart,
-      total: cartSubtotal,
-      address: `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state} - ${shippingAddress.zip}`,
-      status: 'Processing',
-      date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      total_amount: cartSubtotal,
+      shipping_address: `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state} - ${shippingAddress.zip}`,
     };
 
-    setOrders([newOrder, ...orders]);
-    setCart([]);
-    setCurrentScreen('orders');
+    try {
+      const backendOrder = user ? await placeOrder(orderPayload) : null;
+      const orderInfo = backendOrder?.order || backendOrder;
+      const orderId = orderInfo?.id || orderInfo?.orderId || 'ORD-' + Math.floor(100000 + Math.random() * 900000);
+
+      if (user) {
+        await processPayment(orderId, cartSubtotal);
+        await syncCartToBackend(user.id, []);
+      }
+
+      const newOrder = {
+        id: orderId,
+        items: cart,
+        total: cartSubtotal,
+        address: `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state} - ${shippingAddress.zip}`,
+        status: user ? 'Payment Completed' : 'Processing',
+        date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      };
+
+      setOrders([newOrder, ...orders]);
+      setCart([]);
+      setCurrentScreen('orders');
+    } catch (err) {
+      console.error('Checkout Error:', err.response?.data || err.message || err);
+    }
   };
 
   // Filtered Products
@@ -293,7 +345,7 @@ export default function App() {
               {authMode === 'login' ? 'Welcome Back' : 'Create an Account'}
             </h2>
             <p className="text-xs text-slate-500 text-center mb-6">
-              Connected with User Service (<code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">http://13.207.197.125:8081</code>)
+              Connected with User Service (<code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">{USER_SERVICE_URL}</code>)
             </p>
 
             {authStatus.error && (
