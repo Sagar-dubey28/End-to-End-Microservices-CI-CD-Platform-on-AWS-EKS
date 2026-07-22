@@ -6,7 +6,7 @@ import {
 import axios from 'axios';
 
 // User Service API URL
-const USER_SERVICE_URL = 'http://localhost:8081';
+const USER_SERVICE_URL = 'http://13.207.197.125:8081';
 
 const INITIAL_PRODUCTS = [
   { id: 1, name: 'Premium Leather Jacket', price: 4999, category: 'Fashion', rating: 4.8, image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=500' },
@@ -36,39 +36,53 @@ export default function App() {
   });
 
   const handleLogout = () => {
-  setUser(null);
-  setCurrentScreen('home');
-};
+    setUser(null);
+    setCurrentScreen('home');
+  };
 
-  // Auth Handling (Hits User Service at http://localhost:8081)
+  // ✅ FIXED: Real Auth Handling with DB Sync
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthStatus({ loading: true, error: '', success: '' });
 
     try {
       const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      
+      // Fixed payload field mapping (fullName instead of name for Spring Boot DTO)
       const payload = authMode === 'login' 
         ? { email: authData.email, password: authData.password }
-        : authData;
+        : { fullName: authData.name, email: authData.email, password: authData.password };
 
       const response = await axios.post(`${USER_SERVICE_URL}${endpoint}`, payload);
 
-      setAuthStatus({ loading: false, error: '', success: authMode === 'login' ? 'Login Successful!' : 'Registration Successful!' });
+      setAuthStatus({ 
+        loading: false, 
+        error: '', 
+        success: authMode === 'login' ? 'Login Successful!' : 'Registration Successful!' 
+      });
       
-      setUser(response.data.user || { name: authData.name || 'Sagar Dubey', email: authData.email });
+      // Response handling fixed
+      const loggedUser = response.data.user || response.data;
+      setUser({
+        name: loggedUser.fullName || loggedUser.name || authData.name || 'User',
+        email: loggedUser.email || authData.email,
+        id: loggedUser.id
+      });
+
       setTimeout(() => {
         setCurrentScreen('home');
         setAuthStatus({ loading: false, error: '', success: '' });
       }, 1000);
+
     } catch (err) {
-      // Fallback for visual demo if backend user-service is currently offline
-      console.warn('Backend connection error, falling back to local session simulation:', err.message);
-      setUser({ name: authData.name || 'Demo User', email: authData.email });
-      setAuthStatus({ loading: false, error: '', success: 'Logged in (Local Session Active)' });
-      setTimeout(() => {
-        setCurrentScreen('home');
-        setAuthStatus({ loading: false, error: '', success: '' });
-      }, 1000);
+      console.error('Auth Error:', err);
+      // Removed dummy local fallback so real DB errors are displayed
+      const errorMsg = err.response?.data?.message || err.response?.data || 'Failed to authenticate. Check Backend/DB connection.';
+      setAuthStatus({ 
+        loading: false, 
+        error: typeof errorMsg === 'string' ? errorMsg : 'Authentication failed', 
+        success: '' 
+      });
     }
   };
 
@@ -150,37 +164,36 @@ export default function App() {
           {/* User & Cart Actions */}
           <div className="flex items-center gap-3 sm:gap-4">
             {user ? (
-  <div className="flex items-center gap-3">
-    <button 
-      onClick={() => setCurrentScreen('orders')}
-      className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
-    >
-      My Orders
-    </button>
-    <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-      <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm">
-        {user.name ? user.name.charAt(0) : 'U'}
-      </div>
-      <span className="text-sm font-medium text-slate-700 hidden md:block">{user.name}</span>
-    </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setCurrentScreen('orders')}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+                >
+                  My Orders
+                </button>
+                <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                  <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm">
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                  <span className="text-sm font-medium text-slate-700 hidden md:block">{user.name}</span>
+                </div>
 
-    {/* LOGOUT BUTTON */}
-    <button
-      onClick={handleLogout}
-      className="text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition ml-1"
-    >
-      Logout
-    </button>
-  </div>
-) : (
-  <button
-    onClick={() => setCurrentScreen('auth')}
-    className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-indigo-600 transition"
-  >
-    <User className="w-4 h-4" />
-    <span>Login</span>
-  </button>
-)}
+                <button
+                  onClick={handleLogout}
+                  className="text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition ml-1"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setCurrentScreen('auth')}
+                className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-indigo-600 transition"
+              >
+                <User className="w-4 h-4" />
+                <span>Login</span>
+              </button>
+            )}
 
             {/* Cart Button */}
             <button
@@ -204,7 +217,6 @@ export default function App() {
         {/* HOME SCREEN */}
         {currentScreen === 'home' && (
           <div>
-            {/* Hero Section */}
             <div className="bg-gradient-to-r from-indigo-900 to-indigo-700 text-white rounded-3xl p-8 sm:p-12 mb-10 shadow-lg relative overflow-hidden">
               <div className="relative z-10 max-w-xl">
                 <span className="inline-block px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold tracking-wider uppercase mb-4">
@@ -219,7 +231,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Category Filter Pills */}
             <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-6 scrollbar-none">
               {['All', 'Fashion', 'Electronics', 'Accessories', 'Footwear'].map((cat) => (
                 <button
@@ -236,7 +247,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* Products Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredProducts.map((product) => (
                 <div key={product.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition">
@@ -283,7 +293,7 @@ export default function App() {
               {authMode === 'login' ? 'Welcome Back' : 'Create an Account'}
             </h2>
             <p className="text-xs text-slate-500 text-center mb-6">
-              Connected with User Service (<code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">http://localhost:8081</code>)
+              Connected with User Service (<code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">http://13.207.197.125:8081</code>)
             </p>
 
             {authStatus.error && (
@@ -374,7 +384,6 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Cart Items List */}
                 <div className="lg:col-span-2 space-y-4">
                   {cart.map((item) => (
                     <div key={item.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4">
@@ -385,7 +394,6 @@ export default function App() {
                         <div className="text-sm font-extrabold text-slate-900 mt-1">₹{item.price.toLocaleString('en-IN')}</div>
                       </div>
 
-                      {/* Quantity Controls */}
                       <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
                         <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:bg-white rounded-lg text-slate-600 transition">
                           <Minus className="w-3.5 h-3.5" />
@@ -399,7 +407,6 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* Summary Box */}
                 <div className="bg-white border border-slate-200 rounded-3xl p-6 h-fit space-y-4">
                   <h3 className="font-bold text-slate-900 text-base">Order Summary</h3>
                   <div className="space-y-2 text-sm text-slate-600">
@@ -558,4 +565,4 @@ export default function App() {
       </main>
     </div>
   );
-}
+}  
